@@ -1,46 +1,79 @@
 package com.example.proyecto_android_studio_isw_28
 
-import java.util.Locale
+import android.content.Context
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
 
-data class Currency(
-    val code: String,
-    val name: String,
-    val rateToUsd: Double  // cuántas unidades de esta divisa = 1 USD
+// Extensión para DataStore
+private val Context.dataStore by preferencesDataStore(name = "calculator_history")
+
+data class HistoryEntry(
+    val expression: String,
+    val result: String,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
-object CurrencyRepository {
+class HistoryRepository(private val context: Context) {
 
-    // Tasas relativas al USD (base). Actualízalas manualmente o vía API.
-    val currencies: List<Currency> = listOf(
-        Currency("USD", "Dólar estadounidense", 1.0),
-        Currency("EUR", "Euro", 0.92),
-        Currency("MXN", "Peso mexicano", 17.15),
-        Currency("GBP", "Libra esterlina", 0.79),
-        Currency("JPY", "Yen japonés", 149.50),
-        Currency("CAD", "Dólar canadiense", 1.36),
-        Currency("BRL", "Real brasileño", 4.98),
-        Currency("ARS", "Peso argentino", 350.0),
-        Currency("COP", "Peso colombiano", 3950.0),
-        Currency("CLP", "Peso chileno", 890.0)
-    )
+    private val KEY = stringPreferencesKey("history_json")
+    private val MAX_ENTRIES = 100
 
-    fun byCode(code: String): Currency? = currencies.firstOrNull { it.code == code }
-
-    /**
-     * Convierte [amount] de [fromCode] a [toCode].
-     * Devuelve null si alguna moneda no existe.
-     */
-    fun convert(amount: Double, fromCode: String, toCode: String): Double? {
-        val from = byCode(fromCode) ?: return null
-        val to = byCode(toCode) ?: return null
-        // amount / rateFrom => valor en USD; * rateTo => valor en destino
-        return amount / from.rateToUsd * to.rateToUsd
+    val historyFlow: Flow<List<HistoryEntry>> = context.dataStore.data.map { prefs ->
+        parseJson(prefs[KEY] ?: "[]")
     }
 
-    fun formatResult(value: Double): String =
-        String.format(Locale.US, "%,.2f", value)
+    suspend fun addEntry(expression: String, result: String) {
+        context.dataStore.edit { prefs ->
+            val current = parseJson(prefs[KEY] ?: "[]").toMutableList()
+            if (current.firstOrNull()?.expression != expression ||
+                current.firstOrNull()?.result != result
+            ) {
+                current.add(0, HistoryEntry(expression, result))
+            }
+            prefs[KEY] = toJson(current.take(MAX_ENTRIES))
+        }
+    }
 
-    /** Formatea la operación completa para el historial. */
-    fun buildHistoryExpression(amount: String, from: String, to: String): String =
-        "$amount $from → $to"
+    suspend fun removeEntry(timestamp: Long) {
+        context.dataStore.edit { prefs ->
+            val current = parseJson(prefs[KEY] ?: "[]")
+                .filterNot { it.timestamp == timestamp }
+            prefs[KEY] = toJson(current)
+        }
+    }
+
+    suspend fun clear() {
+        context.dataStore.edit { it.remove(KEY) }
+    }
+
+    private fun parseJson(json: String): List<HistoryEntry> = try {
+        val arr = JSONArray(json)
+        (0 until arr.length()).map { i ->
+            val obj = arr.getJSONObject(i)
+            HistoryEntry(
+                expression = obj.getString("expression"),
+                result = obj.getString("result"),
+                timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+            )
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    private fun toJson(entries: List<HistoryEntry>): String {
+        val arr = JSONArray()
+        entries.forEach {
+            arr.put(JSONObject().apply {
+                put("expression", it.expression)
+                put("result", it.result)
+                put("timestamp", it.timestamp)
+            })
+        }
+        return arr.toString()
+    }
 }
