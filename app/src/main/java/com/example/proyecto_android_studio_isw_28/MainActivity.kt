@@ -34,6 +34,22 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+// 🔀 Paleta centralizada (mismos colores que ya usabas)
+object AppColors {
+    val Background = Color(0xFF1C1C1E)
+    val Surface = Color(0xFF2C2C2E)
+    val SurfaceAlt = Color(0xFF3A3A3C)
+    val TextPrimary = Color.White
+    val TextSecondary = Color(0xFF8E8E93)
+    val TextTertiary = Color(0xFF636366)
+    val AccentBlue = Color(0xFF0A84FF)
+    val AccentOrange = Color(0xFFFF9F0A)
+    val AccentRed = Color(0xFFFF453A)
+}
+
+// 🔀 Modo de la app
+enum class CalcMode { SCIENTIFIC, CURRENCY }
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,9 +61,9 @@ class MainActivity : ComponentActivity() {
             Proyecto_Android_studio_isw28Theme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = Color(0xFF1C1C1E)
+                    color = AppColors.Background
                 ) {
-                    ScientificCalculatorScreen(historyRepository)
+                    CalculatorApp(historyRepository)
                 }
             }
         }
@@ -56,19 +72,34 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ScientificCalculatorScreen(historyRepository: HistoryRepository) {
+fun CalculatorApp(historyRepository: HistoryRepository) {
     val scope = rememberCoroutineScope()
 
+    // 🔀 Estado de modo
+    var mode by remember { mutableStateOf(CalcMode.SCIENTIFIC) }
+
+    // ---- Estado calculadora científica ----
     var expression by remember { mutableStateOf("") }
     var displayText by remember { mutableStateOf("0") }
     var errorText by remember { mutableStateOf("") }
     var isDegreeMode by remember { mutableStateOf(true) }
     var showScientificPanel by remember { mutableStateOf(true) }
 
+    // ---- Estado conversor de divisas ----
+    var amountText by remember { mutableStateOf("100") }
+    var fromCurrency by remember { mutableStateOf("USD") }
+    var toCurrency by remember { mutableStateOf("MXN") }
+    var currencyResult by remember { mutableStateOf("") }
+    var currencyError by remember { mutableStateOf("") }
+    var showFromMenu by remember { mutableStateOf(false) }
+    var showToMenu by remember { mutableStateOf(false) }
+
+    // ---- Historial ----
     val history by historyRepository.historyFlow.collectAsState(initial = emptyList())
     var showHistorySheet by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    // ---- Utilidades científicas ----
     fun normalizeExpression(expr: String): String {
         if (!isDegreeMode) return expr
         val pattern = Regex("(sin|cos|tan)\\(([^()]+)\\)")
@@ -77,7 +108,7 @@ fun ScientificCalculatorScreen(historyRepository: HistoryRepository) {
         }
     }
 
-    fun evaluate() {
+    fun evaluateScientific() {
         if (expression.isBlank()) { displayText = "0"; return }
         try {
             val result = ExpressionBuilder(normalizeExpression(expression)).build().evaluate()
@@ -109,13 +140,82 @@ fun ScientificCalculatorScreen(historyRepository: HistoryRepository) {
         if (expression.isNotEmpty()) expression = expression.dropLast(1)
     }
 
+    // ---- Conversión de divisas ----
+    fun evaluateCurrency() {
+        val amount = amountText.toDoubleOrNull()
+        if (amount == null) {
+            currencyError = "Introduce un número válido"
+            return
+        }
+        val converted = CurrencyRepository.convert(amount, fromCurrency, toCurrency)
+        if (converted == null) {
+            currencyError = "Moneda no soportada"
+            return
+        }
+        val formatted = CurrencyRepository.formatResult(converted)
+        currencyResult = formatted
+        currencyError = ""
+        scope.launch {
+            historyRepository.addEntry(
+                CurrencyRepository.buildHistoryExpression(amountText, fromCurrency, toCurrency),
+                "$formatted $toCurrency"
+            )
+        }
+    }
+
+    // ---- Teclado compartido ----
+    fun handleNumericKey(key: String, isCurrency: Boolean) {
+        if (isCurrency) {
+            when (key) {
+                "⌫" -> {
+                    if (amountText.isNotEmpty()) {
+                        amountText = amountText.dropLast(1)
+                        if (amountText.isEmpty()) amountText = "0"
+                    }
+                }
+                "." -> if (!amountText.contains(".")) amountText += "."
+                else -> amountText = if (amountText == "0") key else amountText + key
+            }
+        } else {
+            when (key) {
+                "⌫" -> backspace()
+                "." -> {
+                    val lastNum = expression.split(Regex("[+\\-×÷^()]")).lastOrNull() ?: ""
+                    if (!lastNum.contains(".")) appendToExpression(".")
+                }
+                else -> appendToExpression(key)
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1C1C1E))
+            .background(AppColors.Background)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // ---------- SELECTOR DE MODO ----------
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ModeChip(
+                text = "Científica",
+                selected = mode == CalcMode.SCIENTIFIC,
+                modifier = Modifier.weight(1f),
+                onClick = { mode = CalcMode.SCIENTIFIC }
+            )
+            ModeChip(
+                text = "Divisas",
+                selected = mode == CalcMode.CURRENCY,
+                modifier = Modifier.weight(1f),
+                onClick = { mode = CalcMode.CURRENCY }
+            )
+        }
+
         // ---------- PANTALLA ----------
         Box(
             modifier = Modifier
@@ -129,6 +229,7 @@ fun ScientificCalculatorScreen(historyRepository: HistoryRepository) {
                 verticalArrangement = Arrangement.Bottom,
                 modifier = Modifier.fillMaxWidth()
             ) {
+                // Barra superior: historial + indicador de modo
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -138,106 +239,227 @@ fun ScientificCalculatorScreen(historyRepository: HistoryRepository) {
                         Icon(
                             imageVector = Icons.Default.History,
                             contentDescription = "Historial",
-                            tint = Color(0xFF0A84FF)
+                            tint = AppColors.AccentBlue
                         )
                     }
                     Text(
-                        text = if (isDegreeMode) "DEG" else "RAD",
-                        color = Color(0xFF8E8E93),
+                        text = when {
+                            mode == CalcMode.CURRENCY -> "DIVISAS"
+                            isDegreeMode -> "DEG"
+                            else -> "RAD"
+                        },
+                        color = AppColors.TextSecondary,
                         fontSize = 14.sp
                     )
                 }
+
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = expression.ifEmpty { "0" },
-                    color = Color(0xFF8E8E93),
-                    fontSize = 20.sp,
-                    textAlign = TextAlign.End,
-                    maxLines = 2,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                if (errorText.isNotEmpty()) {
+
+                // 🔀 Contenido variable según modo
+                if (mode == CalcMode.SCIENTIFIC) {
                     Text(
-                        text = errorText,
-                        color = Color(0xFFFF453A),
-                        fontSize = 28.sp,
-                        textAlign = TextAlign.End
-                    )
-                } else {
-                    Text(
-                        text = displayText,
-                        color = Color.White,
-                        fontSize = 48.sp,
-                        fontWeight = FontWeight.Light,
+                        text = expression.ifEmpty { "0" },
+                        color = AppColors.TextSecondary,
+                        fontSize = 20.sp,
                         textAlign = TextAlign.End,
-                        maxLines = 1
+                        maxLines = 2,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                }
-            }
-        }
-
-        // ---------- TOGGLE PANEL CIENTÍFICO ----------
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = { isDegreeMode = !isDegreeMode },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp)
-            ) { Text(if (isDegreeMode) "DEG" else "RAD", color = Color.White) }
-
-            OutlinedButton(
-                onClick = { showScientificPanel = !showScientificPanel },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp)
-            ) { Text(if (showScientificPanel) "2nd ⌃" else "2nd ⌄", color = Color.White) }
-        }
-
-        // ---------- PANEL CIENTÍFICO ----------
-        if (showScientificPanel) {
-            val sciButtons = listOf(
-                listOf("sin", "cos", "tan", "√", "x²"),
-                listOf("ln", "log", "π", "e", "^")
-            )
-            for (row in sciButtons) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    for (btn in row) {
-                        ScientificButton(
-                            text = btn,
-                            modifier = Modifier.weight(1f),
-                            onClick = {
-                                when (btn) {
-                                    "sin", "cos", "tan" -> appendToExpression("$btn(")
-                                    "√" -> appendToExpression("sqrt(")
-                                    "x²" -> appendToExpression("^2")
-                                    "ln" -> appendToExpression("log(")
-                                    "log" -> appendToExpression("log10(")
-                                    "π" -> appendToExpression("pi")
-                                    "e" -> appendToExpression("e")
-                                    "^" -> appendToExpression("^")
-                                }
-                            }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (errorText.isNotEmpty()) {
+                        Text(
+                            text = errorText,
+                            color = AppColors.AccentRed,
+                            fontSize = 28.sp,
+                            textAlign = TextAlign.End
+                        )
+                    } else {
+                        Text(
+                            text = displayText,
+                            color = AppColors.TextPrimary,
+                            fontSize = 48.sp,
+                            fontWeight = FontWeight.Light,
+                            textAlign = TextAlign.End,
+                            maxLines = 1
                         )
                     }
+                } else {
+                    // Divisas: cantidad origen + resultado grande
+                    Text(
+                        text = "$amountText $fromCurrency",
+                        color = AppColors.TextSecondary,
+                        fontSize = 20.sp,
+                        maxLines = 1
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (currencyError.isNotEmpty()) {
+                        Text(
+                            text = currencyError,
+                            color = AppColors.AccentRed,
+                            fontSize = 24.sp,
+                            textAlign = TextAlign.End
+                        )
+                    } else {
+                        Text(
+                            text = if (currencyResult.isNotEmpty()) currencyResult else "0.00",
+                            color = AppColors.TextPrimary,
+                            fontSize = 48.sp,
+                            fontWeight = FontWeight.Light,
+                            textAlign = TextAlign.End,
+                            maxLines = 1
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "→ $toCurrency",
+                        color = AppColors.TextSecondary,
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        }
+
+        // ---------- CONTROLES ESPECÍFICOS DEL MODO ----------
+        if (mode == CalcMode.SCIENTIFIC) {
+            // Toggles DEG/RAD y 2nd
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { isDegreeMode = !isDegreeMode },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text(if (isDegreeMode) "DEG" else "RAD", color = AppColors.TextPrimary) }
+
+                OutlinedButton(
+                    onClick = { showScientificPanel = !showScientificPanel },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text(if (showScientificPanel) "2nd ⌃" else "2nd ⌄", color = AppColors.TextPrimary) }
+            }
+
+            if (showScientificPanel) {
+                val sciButtons = listOf(
+                    listOf("sin", "cos", "tan", "√", "x²"),
+                    listOf("ln", "log", "π", "e", "^")
+                )
+                for (row in sciButtons) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        for (btn in row) {
+                            ScientificButton(
+                                text = btn,
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    when (btn) {
+                                        "sin", "cos", "tan" -> appendToExpression("$btn(")
+                                        "√" -> appendToExpression("sqrt(")
+                                        "x²" -> appendToExpression("^2")
+                                        "ln" -> appendToExpression("log(")
+                                        "log" -> appendToExpression("log10(")
+                                        "π" -> appendToExpression("pi")
+                                        "e" -> appendToExpression("e")
+                                        "^" -> appendToExpression("^")
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
                 Spacer(modifier = Modifier.height(4.dp))
             }
-            Spacer(modifier = Modifier.height(4.dp))
+        } else {
+            // Divisas: selectores de moneda
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Moneda origen
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedButton(
+                        onClick = { showFromMenu = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(fromCurrency, color = AppColors.TextPrimary)
+                        Spacer(Modifier.width(4.dp))
+                        Text("▼", color = AppColors.TextPrimary, fontSize = 12.sp)
+                    }
+                    DropdownMenu(
+                        expanded = showFromMenu,
+                        onDismissRequest = { showFromMenu = false },
+                        containerColor = AppColors.Surface
+                    ) {
+                        CurrencyRepository.currencies.forEach { c ->
+                            DropdownMenuItem(
+                                text = { Text("${c.code} - ${c.name}", color = AppColors.TextPrimary) },
+                                onClick = {
+                                    fromCurrency = c.code
+                                    showFromMenu = false
+                                    currencyResult = ""
+                                    currencyError = ""
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Moneda destino
+                Box(modifier = Modifier.weight(1f)) {
+                    OutlinedButton(
+                        onClick = { showToMenu = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(toCurrency, color = AppColors.TextPrimary)
+                        Spacer(Modifier.width(4.dp))
+                        Text("▼", color = AppColors.TextPrimary, fontSize = 12.sp)
+                    }
+                    DropdownMenu(
+                        expanded = showToMenu,
+                        onDismissRequest = { showToMenu = false },
+                        containerColor = AppColors.Surface
+                    ) {
+                        CurrencyRepository.currencies.forEach { c ->
+                            DropdownMenuItem(
+                                text = { Text("${c.code} - ${c.name}", color = AppColors.TextPrimary) },
+                                onClick = {
+                                    toCurrency = c.code
+                                    showToMenu = false
+                                    currencyResult = ""
+                                    currencyError = ""
+                                }
+                            )
+                        }
+                    }
+                }
+            }
         }
 
-        // ---------- TECLADO NUMÉRICO ----------
-        val buttons = listOf(
-            listOf("C", "(", ")", "÷"),
-            listOf("7", "8", "9", "×"),
-            listOf("4", "5", "6", "−"),
-            listOf("1", "2", "3", "+"),
-            listOf("0", ".", "⌫", "=")
-        )
+        // ---------- TECLADO ----------
+        val buttons = if (mode == CalcMode.SCIENTIFIC) {
+            listOf(
+                listOf("C", "(", ")", "÷"),
+                listOf("7", "8", "9", "×"),
+                listOf("4", "5", "6", "−"),
+                listOf("1", "2", "3", "+"),
+                listOf("0", ".", "⌫", "=")
+            )
+        } else {
+            listOf(
+                listOf("7", "8", "9"),
+                listOf("4", "5", "6"),
+                listOf("1", "2", "3"),
+                listOf("0", ".", "⌫")
+            )
+        }
+
         for (row in buttons) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -251,24 +473,52 @@ fun ScientificCalculatorScreen(historyRepository: HistoryRepository) {
                         isEquals = button == "=",
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            when (button) {
-                                "C" -> clearAll()
-                                "⌫" -> backspace()
-                                "=" -> evaluate()
-                                "." -> {
-                                    val lastNum = expression.split(Regex("[+\\-×÷^()]")).lastOrNull() ?: ""
-                                    if (!lastNum.contains(".")) appendToExpression(".")
+                            if (mode == CalcMode.SCIENTIFIC) {
+                                when (button) {
+                                    "C" -> clearAll()
+                                    "⌫" -> backspace()
+                                    "=" -> evaluateScientific()
+                                    "." -> {
+                                        val lastNum = expression.split(Regex("[+\\-×÷^()]")).lastOrNull() ?: ""
+                                        if (!lastNum.contains(".")) appendToExpression(".")
+                                    }
+                                    "÷" -> appendToExpression("/")
+                                    "×" -> appendToExpression("*")
+                                    "−" -> appendToExpression("-")
+                                    "+" -> appendToExpression("+")
+                                    else -> appendToExpression(button)
                                 }
-                                "÷" -> appendToExpression("/")
-                                "×" -> appendToExpression("*")
-                                "−" -> appendToExpression("-")
-                                "+" -> appendToExpression("+")
-                                else -> appendToExpression(button)
+                            } else {
+                                handleNumericKey(button, isCurrency = true)
                             }
                         }
                     )
                 }
             }
+        }
+
+        // ---------- BOTÓN PRINCIPAL ----------
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+            onClick = {
+                if (mode == CalcMode.SCIENTIFIC) evaluateScientific()
+                else evaluateCurrency()
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (mode == CalcMode.SCIENTIFIC) AppColors.AccentBlue
+                else AppColors.AccentOrange
+            )
+        ) {
+            Text(
+                text = if (mode == CalcMode.SCIENTIFIC) "Calcular" else "Convertir",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
         }
     }
 
@@ -277,14 +527,29 @@ fun ScientificCalculatorScreen(historyRepository: HistoryRepository) {
         ModalBottomSheet(
             onDismissRequest = { showHistorySheet = false },
             sheetState = sheetState,
-            containerColor = Color(0xFF2C2C2E)
+            containerColor = AppColors.Surface
         ) {
             HistorySheetContent(
                 history = history,
                 onEntryClick = { entry ->
-                    expression = entry.expression
-                    displayText = entry.result
-                    errorText = ""
+                    // Reutilizar la entrada según su tipo (heurística simple)
+                    if (entry.expression.contains("→")) {
+                        // Es de divisas: "100 USD → MXN"
+                        val parts = entry.expression.split(" ")
+                        if (parts.size >= 3) {
+                            mode = CalcMode.CURRENCY
+                            amountText = parts[0]
+                            fromCurrency = parts[1]
+                            toCurrency = parts[3].ifEmpty { toCurrency }
+                            currencyResult = entry.result.substringBefore(" ").replace(",", "")
+                            currencyError = ""
+                        }
+                    } else {
+                        mode = CalcMode.SCIENTIFIC
+                        expression = entry.expression
+                        displayText = entry.result
+                        errorText = ""
+                    }
                     showHistorySheet = false
                 },
                 onEntryDelete = { entry ->
@@ -293,6 +558,30 @@ fun ScientificCalculatorScreen(historyRepository: HistoryRepository) {
                 onClear = { scope.launch { historyRepository.clear() } }
             )
         }
+    }
+}
+
+// ---------- COMPONENTES ----------
+
+@Composable
+fun ModeChip(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val bg = if (selected) AppColors.AccentBlue else AppColors.Surface
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(40.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = bg,
+            contentColor = AppColors.TextPrimary
+        ),
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -315,7 +604,7 @@ fun HistorySheetContent(
         ) {
             Text(
                 text = "Historial",
-                color = Color.White,
+                color = AppColors.TextPrimary,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -324,10 +613,10 @@ fun HistorySheetContent(
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = "Borrar todo",
-                        tint = Color(0xFFFF453A)
+                        tint = AppColors.AccentRed
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("Borrar todo", color = Color(0xFFFF453A))
+                    Text("Borrar todo", color = AppColors.AccentRed)
                 }
             }
         }
@@ -340,7 +629,7 @@ fun HistorySheetContent(
             ) {
                 Text(
                     text = "Aún no hay operaciones",
-                    color = Color(0xFF8E8E93),
+                    color = AppColors.TextSecondary,
                     fontSize = 16.sp
                 )
             }
@@ -370,7 +659,6 @@ fun HistoryRow(
 ) {
     val timeFormat = remember { SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()) }
     val clipboard = LocalClipboardManager.current
-    var showMenu by remember { mutableStateOf(false) }
 
     Box {
         Column(
@@ -378,18 +666,18 @@ fun HistoryRow(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
                 .clickable(onClick = onClick)
-                .background(Color(0xFF3A3A3C))
+                .background(AppColors.SurfaceAlt)
                 .padding(12.dp)
         ) {
             Text(
                 text = entry.expression,
-                color = Color(0xFF8E8E93),
+                color = AppColors.TextSecondary,
                 fontSize = 14.sp
             )
             Spacer(Modifier.height(2.dp))
             Text(
                 text = "= ${entry.result}",
-                color = Color.White,
+                color = AppColors.TextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium
             )
@@ -401,20 +689,18 @@ fun HistoryRow(
             ) {
                 Text(
                     text = timeFormat.format(Date(entry.timestamp)),
-                    color = Color(0xFF636366),
+                    color = AppColors.TextTertiary,
                     fontSize = 11.sp
                 )
                 Row {
                     IconButton(
-                        onClick = {
-                            clipboard.setText(AnnotatedString(entry.result))
-                        },
+                        onClick = { clipboard.setText(AnnotatedString(entry.result)) },
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             Icons.Default.ContentCopy,
                             contentDescription = "Copiar resultado",
-                            tint = Color(0xFF0A84FF),
+                            tint = AppColors.AccentBlue,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -425,7 +711,7 @@ fun HistoryRow(
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = "Eliminar entrada",
-                            tint = Color(0xFFFF453A),
+                            tint = AppColors.AccentRed,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -459,8 +745,8 @@ fun ScientificButton(
         modifier = modifier.padding(2.dp).height(48.dp),
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = Color(0xFF3A3A3C),
-            contentColor = Color(0xFF0A84FF)
+            containerColor = AppColors.SurfaceAlt,
+            contentColor = AppColors.AccentBlue
         ),
         contentPadding = PaddingValues(0.dp)
     ) {
@@ -477,9 +763,9 @@ fun CalculatorButton(
     onClick: () -> Unit
 ) {
     val bgColor = when {
-        isEquals -> Color(0xFF0A84FF)
-        isOperator -> Color(0xFFFF9F0A)
-        else -> Color(0xFF2C2C2E)
+        isEquals -> AppColors.AccentBlue
+        isOperator -> AppColors.AccentOrange
+        else -> AppColors.Surface
     }
     Button(
         onClick = onClick,
