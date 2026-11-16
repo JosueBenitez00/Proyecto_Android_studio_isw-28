@@ -19,8 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,7 +44,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// 🎨 Paleta de colores dinámica (Soporta Modo Claro y Oscuro)
+// 🎨 Paleta de colores dinámica
 data class AppColors(
     val Background: Color,
     val Surface: Color,
@@ -89,50 +91,67 @@ class MainActivity : ComponentActivity() {
         val historyRepository = HistoryRepository(applicationContext)
 
         setContent {
-            // Detecta automáticamente el modo claro/oscuro del sistema
-            val isDarkTheme = isSystemInDarkTheme()
-            val colors = if (isDarkTheme) DarkColors else LightColors
-
             Proyecto_Android_studio_isw28Theme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = colors.Background
-                ) {
-                    CalculatorApp(historyRepository, colors)
-                }
+                // ✅ Opción 2: Llamamos a una función @Composable
+                CalculatorMainScreen(historyRepository)
             }
         }
     }
 }
 
+// ✅ NUEVA FUNCIÓN @Composable: Aquí `remember` es válido
+@Composable
+fun CalculatorMainScreen(historyRepository: HistoryRepository) {
+    val systemDarkTheme = isSystemInDarkTheme()
+    var isDarkMode by remember { mutableStateOf(systemDarkTheme) }
+
+    // Si el usuario cambia el tema del sistema, actualizamos el estado
+    LaunchedEffect(systemDarkTheme) {
+        isDarkMode = systemDarkTheme
+    }
+
+    val colors = if (isDarkMode) DarkColors else LightColors
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = colors.Background
+    ) {
+        CalculatorApp(
+            historyRepository = historyRepository,
+            colors = colors,
+            isDarkMode = isDarkMode,
+            onToggleTheme = { isDarkMode = !isDarkMode }
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CalculatorApp(historyRepository: HistoryRepository, colors: AppColors) {
+fun CalculatorApp(
+    historyRepository: HistoryRepository,
+    colors: AppColors,
+    isDarkMode: Boolean,
+    onToggleTheme: () -> Unit
+) {
     val scope = rememberCoroutineScope()
 
     // 🔊 Generador de Sonido (ToneGenerator)
     val toneGen = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 80) }
-
-    // ✅ OBTENER AUDIO MANAGER CORRECTAMENTE
     val context = LocalContext.current
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
 
-    // Función para reproducir sonido respetando el modo silencio del móvil
     fun playSound(isEqualsOrConvert: Boolean = false) {
         if (audioManager.ringerMode == AudioManager.RINGER_MODE_NORMAL) {
             if (isEqualsOrConvert) {
-                toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 100) // Tono de éxito/confirmación
+                toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 100)
             } else {
-                toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 40) // Clic corto
+                toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 40)
             }
         }
     }
 
-    // Liberar el sonido cuando se cierra la app para evitar fugas de memoria
     DisposableEffect(Unit) {
-        onDispose {
-            toneGen.release()
-        }
+        onDispose { toneGen.release() }
     }
 
     var mode by remember { mutableStateOf(CalcMode.SCIENTIFIC) }
@@ -272,35 +291,49 @@ fun CalculatorApp(historyRepository: HistoryRepository, colors: AppColors) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Menú hamburguesa
-                    Box {
-                        IconButton(onClick = { showModeMenu = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Menu,
-                                contentDescription = "Menú de modos",
-                                tint = colors.TextSecondary
-                            )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Menú hamburguesa
+                        Box {
+                            IconButton(onClick = { showModeMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.Menu,
+                                    contentDescription = "Menú de modos",
+                                    tint = colors.TextSecondary
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showModeMenu,
+                                onDismissRequest = { showModeMenu = false },
+                                modifier = Modifier.background(colors.Background)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Científica", color = colors.TextPrimary) },
+                                    onClick = {
+                                        playSound()
+                                        mode = CalcMode.SCIENTIFIC
+                                        showModeMenu = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Divisas", color = colors.TextPrimary) },
+                                    onClick = {
+                                        playSound()
+                                        mode = CalcMode.CURRENCY
+                                        showModeMenu = false
+                                    }
+                                )
+                            }
                         }
-                        DropdownMenu(
-                            expanded = showModeMenu,
-                            onDismissRequest = { showModeMenu = false },
-                            modifier = Modifier.background(colors.Background)
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Científica", color = colors.TextPrimary) },
-                                onClick = {
-                                    playSound()
-                                    mode = CalcMode.SCIENTIFIC
-                                    showModeMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Divisas", color = colors.TextPrimary) },
-                                onClick = {
-                                    playSound()
-                                    mode = CalcMode.CURRENCY
-                                    showModeMenu = false
-                                }
+
+                        // ✅ BOTÓN PARA CAMBIAR EL TEMA MANUALMENTE
+                        IconButton(onClick = {
+                            playSound()
+                            onToggleTheme()
+                        }) {
+                            Icon(
+                                imageVector = if (isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                contentDescription = "Cambiar Tema",
+                                tint = colors.TextSecondary
                             )
                         }
                     }
@@ -557,7 +590,6 @@ fun CalculatorApp(historyRepository: HistoryRepository, colors: AppColors) {
                         colors = colors,
                         modifier = Modifier.weight(1f),
                         onClick = {
-                            // El botón "=" o la conversión hace un sonido distinto
                             if (button == "=" || mode == CalcMode.CURRENCY) {
                                 playSound(isEqualsOrConvert = true)
                             } else {
