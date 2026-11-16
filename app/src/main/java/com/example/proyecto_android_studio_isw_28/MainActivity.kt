@@ -17,7 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Menu // ✅ Icono de hamburguesa
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,7 +37,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// 🔀 Paleta centralizada
 object AppColors {
     val Background = Color(0xFF1C1C1E)
     val Surface = Color(0xFF2C2C2E)
@@ -163,6 +162,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
         }
     }
 
+    // Modificado para que divisas calcule automáticamente
     fun handleNumericKey(key: String, isCurrency: Boolean) {
         if (isCurrency) {
             when (key) {
@@ -175,6 +175,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                 "." -> if (!amountText.contains(".")) amountText += "."
                 else -> amountText = if (amountText == "0") key else amountText + key
             }
+            evaluateCurrency() // ✅ Auto calcular en divisas
         } else {
             when (key) {
                 "⌫" -> backspace()
@@ -195,50 +196,6 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // ---------- SUBMENÚ HAMBURGUESA ----------
-        Box(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-            OutlinedButton(
-                onClick = { showModeMenu = true },
-                modifier = Modifier.fillMaxWidth().height(44.dp),
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Menu, // ✅ Icono de hamburguesa
-                    contentDescription = "Menú",
-                    tint = AppColors.TextPrimary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (mode == CalcMode.SCIENTIFIC) "Científica" else "Divisas",
-                    color = AppColors.TextPrimary,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-            DropdownMenu(
-                expanded = showModeMenu,
-                onDismissRequest = { showModeMenu = false },
-                modifier = Modifier.background(AppColors.Surface).fillMaxWidth(0.9f)
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Científica", color = AppColors.TextPrimary) },
-                    onClick = {
-                        mode = CalcMode.SCIENTIFIC
-                        showModeMenu = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Divisas", color = AppColors.TextPrimary) },
-                    onClick = {
-                        mode = CalcMode.CURRENCY
-                        showModeMenu = false
-                    }
-                )
-            }
-        }
-
         // ---------- PANTALLA (DISPLAY) ----------
         Box(
             modifier = Modifier
@@ -257,6 +214,37 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // ✅ Menú hamburguesa en la parte inferior izquierda del display
+                    Box {
+                        IconButton(onClick = { showModeMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "Menú de modos",
+                                tint = AppColors.TextSecondary
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showModeMenu,
+                            onDismissRequest = { showModeMenu = false },
+                            modifier = Modifier.background(AppColors.Surface)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Científica", color = AppColors.TextPrimary) },
+                                onClick = {
+                                    mode = CalcMode.SCIENTIFIC
+                                    showModeMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Divisas", color = AppColors.TextPrimary) },
+                                onClick = {
+                                    mode = CalcMode.CURRENCY
+                                    showModeMenu = false
+                                }
+                            )
+                        }
+                    }
+
                     IconButton(onClick = { showHistorySheet = true }) {
                         Icon(
                             imageVector = Icons.Default.History,
@@ -264,15 +252,6 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                             tint = AppColors.AccentBlue
                         )
                     }
-                    Text(
-                        text = when {
-                            mode == CalcMode.CURRENCY -> "DIVISAS"
-                            isDegreeMode -> "DEG"
-                            else -> "RAD"
-                        },
-                        color = AppColors.TextSecondary,
-                        fontSize = 14.sp
-                    )
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -424,8 +403,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                                 onClick = {
                                     fromCurrency = c.code
                                     showFromMenu = false
-                                    currencyResult = ""
-                                    currencyError = ""
+                                    evaluateCurrency() // ✅ Auto calcular
                                 }
                             )
                         }
@@ -454,8 +432,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                                 onClick = {
                                     toCurrency = c.code
                                     showToMenu = false
-                                    currencyResult = ""
-                                    currencyError = ""
+                                    evaluateCurrency() // ✅ Auto calcular
                                 }
                             )
                         }
@@ -499,7 +476,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                                 when (button) {
                                     "C" -> clearAll()
                                     "⌫" -> backspace()
-                                    "=" -> evaluateScientific()
+                                    "=" -> evaluateScientific() // ✅ Calcula al presionar =
                                     "." -> {
                                         val lastNum = expression.split(Regex("[+\\-×÷^()]")).lastOrNull() ?: ""
                                         if (!lastNum.contains(".")) appendToExpression(".")
@@ -519,28 +496,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
             }
         }
 
-        // ---------- BOTÓN PRINCIPAL (Solo para Divisas) ----------
-        if (mode == CalcMode.CURRENCY) { // ✅ El botón solo se muestra en modo Divisas
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(
-                onClick = { evaluateCurrency() },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = AppColors.AccentOrange
-                )
-            ) {
-                Text(
-                    text = "Convertir",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
-        }
-
+        // ✅ Se ha eliminado por completo el botón grande de "Calcular/Convertir"
         Spacer(modifier = Modifier.height(16.dp))
     }
 
