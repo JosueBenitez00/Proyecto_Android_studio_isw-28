@@ -1,11 +1,15 @@
 package com.example.proyecto_android_studio_isw_28
 
+import android.content.Context
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -37,17 +42,42 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-object AppColors {
-    val Background = Color(0xFF1C1C1E)
-    val Surface = Color(0xFF2C2C2E)
-    val SurfaceAlt = Color(0xFF3A3A3C)
-    val TextPrimary = Color.White
-    val TextSecondary = Color(0xFF8E8E93)
-    val TextTertiary = Color(0xFF636366)
-    val AccentBlue = Color(0xFF0A84FF)
-    val AccentOrange = Color(0xFFFF9F0A)
-    val AccentRed = Color(0xFFFF453A)
-}
+// 🎨 Paleta de colores dinámica (Soporta Modo Claro y Oscuro)
+data class AppColors(
+    val Background: Color,
+    val Surface: Color,
+    val SurfaceAlt: Color,
+    val TextPrimary: Color,
+    val TextSecondary: Color,
+    val TextTertiary: Color,
+    val AccentBlue: Color,
+    val AccentOrange: Color,
+    val AccentRed: Color
+)
+
+val LightColors = AppColors(
+    Background = Color.White,
+    Surface = Color(0xFFF2F2F7),
+    SurfaceAlt = Color(0xFFE5E5EA),
+    TextPrimary = Color(0xFF1C1C1E),
+    TextSecondary = Color(0xFF8E8E93),
+    TextTertiary = Color(0xFFAEAEB2),
+    AccentBlue = Color(0xFF007AFF),
+    AccentOrange = Color(0xFFFF9500),
+    AccentRed = Color(0xFFFF3B30)
+)
+
+val DarkColors = AppColors(
+    Background = Color(0xFF1C1C1E),
+    Surface = Color(0xFF2C2C2E),
+    SurfaceAlt = Color(0xFF3A3A3C),
+    TextPrimary = Color.White,
+    TextSecondary = Color(0xFF8E8E93),
+    TextTertiary = Color(0xFF636366),
+    AccentBlue = Color(0xFF0A84FF),
+    AccentOrange = Color(0xFFFF9F0A),
+    AccentRed = Color(0xFFFF453A)
+)
 
 enum class CalcMode { SCIENTIFIC, CURRENCY }
 
@@ -59,12 +89,16 @@ class MainActivity : ComponentActivity() {
         val historyRepository = HistoryRepository(applicationContext)
 
         setContent {
+            // Detecta automáticamente el modo claro/oscuro del sistema
+            val isDarkTheme = isSystemInDarkTheme()
+            val colors = if (isDarkTheme) DarkColors else LightColors
+
             Proyecto_Android_studio_isw28Theme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = AppColors.Background
+                    color = colors.Background
                 ) {
-                    CalculatorApp(historyRepository)
+                    CalculatorApp(historyRepository, colors)
                 }
             }
         }
@@ -73,8 +107,33 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CalculatorApp(historyRepository: HistoryRepository) {
+fun CalculatorApp(historyRepository: HistoryRepository, colors: AppColors) {
     val scope = rememberCoroutineScope()
+
+    // 🔊 Generador de Sonido (ToneGenerator)
+    val toneGen = remember { ToneGenerator(AudioManager.STREAM_MUSIC, 80) }
+
+    // ✅ OBTENER AUDIO MANAGER CORRECTAMENTE
+    val context = LocalContext.current
+    val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+
+    // Función para reproducir sonido respetando el modo silencio del móvil
+    fun playSound(isEqualsOrConvert: Boolean = false) {
+        if (audioManager.ringerMode == AudioManager.RINGER_MODE_NORMAL) {
+            if (isEqualsOrConvert) {
+                toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 100) // Tono de éxito/confirmación
+            } else {
+                toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 40) // Clic corto
+            }
+        }
+    }
+
+    // Liberar el sonido cuando se cierra la app para evitar fugas de memoria
+    DisposableEffect(Unit) {
+        onDispose {
+            toneGen.release()
+        }
+    }
 
     var mode by remember { mutableStateOf(CalcMode.SCIENTIFIC) }
     var showModeMenu by remember { mutableStateOf(false) }
@@ -162,7 +221,6 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
         }
     }
 
-    // Modificado para que divisas calcule automáticamente
     fun handleNumericKey(key: String, isCurrency: Boolean) {
         if (isCurrency) {
             when (key) {
@@ -175,7 +233,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                 "." -> if (!amountText.contains(".")) amountText += "."
                 else -> amountText = if (amountText == "0") key else amountText + key
             }
-            evaluateCurrency() // ✅ Auto calcular en divisas
+            evaluateCurrency()
         } else {
             when (key) {
                 "⌫" -> backspace()
@@ -191,7 +249,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(AppColors.Background)
+            .background(colors.Background)
             .padding(8.dp)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -214,30 +272,32 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // ✅ Menú hamburguesa en la parte inferior izquierda del display
+                    // Menú hamburguesa
                     Box {
                         IconButton(onClick = { showModeMenu = true }) {
                             Icon(
                                 imageVector = Icons.Default.Menu,
                                 contentDescription = "Menú de modos",
-                                tint = AppColors.TextSecondary
+                                tint = colors.TextSecondary
                             )
                         }
                         DropdownMenu(
                             expanded = showModeMenu,
                             onDismissRequest = { showModeMenu = false },
-                            modifier = Modifier.background(AppColors.Surface)
+                            modifier = Modifier.background(colors.Background)
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Científica", color = AppColors.TextPrimary) },
+                                text = { Text("Científica", color = colors.TextPrimary) },
                                 onClick = {
+                                    playSound()
                                     mode = CalcMode.SCIENTIFIC
                                     showModeMenu = false
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Divisas", color = AppColors.TextPrimary) },
+                                text = { Text("Divisas", color = colors.TextPrimary) },
                                 onClick = {
+                                    playSound()
                                     mode = CalcMode.CURRENCY
                                     showModeMenu = false
                                 }
@@ -245,11 +305,15 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                         }
                     }
 
-                    IconButton(onClick = { showHistorySheet = true }) {
+                    // Historial
+                    IconButton(onClick = {
+                        playSound()
+                        showHistorySheet = true
+                    }) {
                         Icon(
                             imageVector = Icons.Default.History,
                             contentDescription = "Historial",
-                            tint = AppColors.AccentBlue
+                            tint = colors.AccentBlue
                         )
                     }
                 }
@@ -259,7 +323,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                 if (mode == CalcMode.SCIENTIFIC) {
                     Text(
                         text = expression.ifEmpty { "0" },
-                        color = AppColors.TextSecondary,
+                        color = colors.TextSecondary,
                         fontSize = 18.sp,
                         textAlign = TextAlign.End,
                         maxLines = 2,
@@ -269,14 +333,14 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                     if (errorText.isNotEmpty()) {
                         Text(
                             text = errorText,
-                            color = AppColors.AccentRed,
+                            color = colors.AccentRed,
                             fontSize = 24.sp,
                             textAlign = TextAlign.End
                         )
                     } else {
                         Text(
                             text = displayText,
-                            color = AppColors.TextPrimary,
+                            color = colors.TextPrimary,
                             fontSize = 42.sp,
                             fontWeight = FontWeight.Light,
                             textAlign = TextAlign.End,
@@ -286,7 +350,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                 } else {
                     Text(
                         text = "$amountText $fromCurrency",
-                        color = AppColors.TextSecondary,
+                        color = colors.TextSecondary,
                         fontSize = 18.sp,
                         maxLines = 1
                     )
@@ -294,14 +358,14 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                     if (currencyError.isNotEmpty()) {
                         Text(
                             text = currencyError,
-                            color = AppColors.AccentRed,
+                            color = colors.AccentRed,
                             fontSize = 20.sp,
                             textAlign = TextAlign.End
                         )
                     } else {
                         Text(
                             text = if (currencyResult.isNotEmpty()) currencyResult else "0.00",
-                            color = AppColors.TextPrimary,
+                            color = colors.TextPrimary,
                             fontSize = 42.sp,
                             fontWeight = FontWeight.Light,
                             textAlign = TextAlign.End,
@@ -311,7 +375,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "→ $toCurrency",
-                        color = AppColors.TextSecondary,
+                        color = colors.TextSecondary,
                         fontSize = 14.sp
                     )
                 }
@@ -327,18 +391,26 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(
-                    onClick = { isDegreeMode = !isDegreeMode },
+                    onClick = {
+                        playSound()
+                        isDegreeMode = !isDegreeMode
+                    },
                     modifier = Modifier.weight(1f).height(40.dp),
                     shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(0.dp)
-                ) { Text(if (isDegreeMode) "DEG" else "RAD", color = AppColors.TextPrimary, fontSize = 14.sp) }
+                    contentPadding = PaddingValues(0.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.TextPrimary)
+                ) { Text(if (isDegreeMode) "DEG" else "RAD", fontSize = 14.sp) }
 
                 OutlinedButton(
-                    onClick = { showScientificPanel = !showScientificPanel },
+                    onClick = {
+                        playSound()
+                        showScientificPanel = !showScientificPanel
+                    },
                     modifier = Modifier.weight(1f).height(40.dp),
                     shape = RoundedCornerShape(12.dp),
-                    contentPadding = PaddingValues(0.dp)
-                ) { Text(if (showScientificPanel) "2nd ⌃" else "2nd ⌄", color = AppColors.TextPrimary, fontSize = 14.sp) }
+                    contentPadding = PaddingValues(0.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.TextPrimary)
+                ) { Text(if (showScientificPanel) "2nd ⌃" else "2nd ⌄", fontSize = 14.sp) }
             }
 
             if (showScientificPanel) {
@@ -354,8 +426,10 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                         for (btn in row) {
                             ScientificButton(
                                 text = btn,
+                                colors = colors,
                                 modifier = Modifier.weight(1f),
                                 onClick = {
+                                    playSound()
                                     when (btn) {
                                         "sin", "cos", "tan" -> appendToExpression("$btn(")
                                         "√" -> appendToExpression("sqrt(")
@@ -383,27 +457,32 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
             ) {
                 Box(modifier = Modifier.weight(1f)) {
                     OutlinedButton(
-                        onClick = { showFromMenu = true },
+                        onClick = {
+                            playSound()
+                            showFromMenu = true
+                        },
                         modifier = Modifier.fillMaxWidth().height(40.dp),
                         shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(0.dp)
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.TextPrimary)
                     ) {
-                        Text(fromCurrency, color = AppColors.TextPrimary, fontSize = 14.sp)
+                        Text(fromCurrency, fontSize = 14.sp)
                         Spacer(Modifier.width(4.dp))
-                        Text("▼", color = AppColors.TextPrimary, fontSize = 10.sp)
+                        Text("▼", fontSize = 10.sp)
                     }
                     DropdownMenu(
                         expanded = showFromMenu,
                         onDismissRequest = { showFromMenu = false },
-                        modifier = Modifier.background(AppColors.Surface)
+                        modifier = Modifier.background(colors.Background)
                     ) {
                         CurrencyRepository.currencies.forEach { c ->
                             DropdownMenuItem(
-                                text = { Text("${c.code} - ${c.name}", color = AppColors.TextPrimary) },
+                                text = { Text("${c.code} - ${c.name}", color = colors.TextPrimary) },
                                 onClick = {
+                                    playSound()
                                     fromCurrency = c.code
                                     showFromMenu = false
-                                    evaluateCurrency() // ✅ Auto calcular
+                                    evaluateCurrency()
                                 }
                             )
                         }
@@ -412,27 +491,32 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
 
                 Box(modifier = Modifier.weight(1f)) {
                     OutlinedButton(
-                        onClick = { showToMenu = true },
+                        onClick = {
+                            playSound()
+                            showToMenu = true
+                        },
                         modifier = Modifier.fillMaxWidth().height(40.dp),
                         shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(0.dp)
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.TextPrimary)
                     ) {
-                        Text(toCurrency, color = AppColors.TextPrimary, fontSize = 14.sp)
+                        Text(toCurrency, fontSize = 14.sp)
                         Spacer(Modifier.width(4.dp))
-                        Text("▼", color = AppColors.TextPrimary, fontSize = 10.sp)
+                        Text("▼", fontSize = 10.sp)
                     }
                     DropdownMenu(
                         expanded = showToMenu,
                         onDismissRequest = { showToMenu = false },
-                        modifier = Modifier.background(AppColors.Surface)
+                        modifier = Modifier.background(colors.Background)
                     ) {
                         CurrencyRepository.currencies.forEach { c ->
                             DropdownMenuItem(
-                                text = { Text("${c.code} - ${c.name}", color = AppColors.TextPrimary) },
+                                text = { Text("${c.code} - ${c.name}", color = colors.TextPrimary) },
                                 onClick = {
+                                    playSound()
                                     toCurrency = c.code
                                     showToMenu = false
-                                    evaluateCurrency() // ✅ Auto calcular
+                                    evaluateCurrency()
                                 }
                             )
                         }
@@ -470,13 +554,21 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                         text = button,
                         isOperator = isOperator,
                         isEquals = button == "=",
+                        colors = colors,
                         modifier = Modifier.weight(1f),
                         onClick = {
+                            // El botón "=" o la conversión hace un sonido distinto
+                            if (button == "=" || mode == CalcMode.CURRENCY) {
+                                playSound(isEqualsOrConvert = true)
+                            } else {
+                                playSound()
+                            }
+
                             if (mode == CalcMode.SCIENTIFIC) {
                                 when (button) {
                                     "C" -> clearAll()
                                     "⌫" -> backspace()
-                                    "=" -> evaluateScientific() // ✅ Calcula al presionar =
+                                    "=" -> evaluateScientific()
                                     "." -> {
                                         val lastNum = expression.split(Regex("[+\\-×÷^()]")).lastOrNull() ?: ""
                                         if (!lastNum.contains(".")) appendToExpression(".")
@@ -496,7 +588,6 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
             }
         }
 
-        // ✅ Se ha eliminado por completo el botón grande de "Calcular/Convertir"
         Spacer(modifier = Modifier.height(16.dp))
     }
 
@@ -505,11 +596,13 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
         ModalBottomSheet(
             onDismissRequest = { showHistorySheet = false },
             sheetState = sheetState,
-            containerColor = AppColors.Surface
+            containerColor = colors.SurfaceAlt
         ) {
             HistorySheetContent(
                 history = history,
+                colors = colors,
                 onEntryClick = { entry ->
+                    playSound()
                     if (entry.expression.contains("→")) {
                         val parts = entry.expression.split(" ")
                         if (parts.size >= 4) {
@@ -529,9 +622,13 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                     showHistorySheet = false
                 },
                 onEntryDelete = { entry ->
+                    playSound()
                     scope.launch { historyRepository.removeEntry(entry.timestamp) }
                 },
-                onClear = { scope.launch { historyRepository.clear() } }
+                onClear = {
+                    playSound()
+                    scope.launch { historyRepository.clear() }
+                }
             )
         }
     }
@@ -542,6 +639,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
 @Composable
 fun HistorySheetContent(
     history: List<HistoryEntry>,
+    colors: AppColors,
     onEntryClick: (HistoryEntry) -> Unit,
     onEntryDelete: (HistoryEntry) -> Unit,
     onClear: () -> Unit
@@ -558,7 +656,7 @@ fun HistorySheetContent(
         ) {
             Text(
                 text = "Historial",
-                color = AppColors.TextPrimary,
+                color = colors.TextPrimary,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -567,10 +665,10 @@ fun HistorySheetContent(
                     Icon(
                         Icons.Default.Delete,
                         contentDescription = "Borrar todo",
-                        tint = AppColors.AccentRed
+                        tint = colors.AccentRed
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("Borrar todo", color = AppColors.AccentRed)
+                    Text("Borrar todo", color = colors.AccentRed)
                 }
             }
         }
@@ -583,7 +681,7 @@ fun HistorySheetContent(
             ) {
                 Text(
                     text = "Aún no hay operaciones",
-                    color = AppColors.TextSecondary,
+                    color = colors.TextSecondary,
                     fontSize = 16.sp
                 )
             }
@@ -599,6 +697,7 @@ fun HistorySheetContent(
                 ) { entry ->
                     HistoryRow(
                         entry = entry,
+                        colors = colors,
                         onClick = { onEntryClick(entry) },
                         onDelete = { onEntryDelete(entry) }
                     )
@@ -611,6 +710,7 @@ fun HistorySheetContent(
 @Composable
 fun HistoryRow(
     entry: HistoryEntry,
+    colors: AppColors,
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -623,18 +723,18 @@ fun HistoryRow(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
                 .clickable(onClick = onClick)
-                .background(AppColors.SurfaceAlt)
+                .background(colors.Background)
                 .padding(12.dp)
         ) {
             Text(
                 text = entry.expression,
-                color = AppColors.TextSecondary,
+                color = colors.TextSecondary,
                 fontSize = 14.sp
             )
             Spacer(Modifier.height(2.dp))
             Text(
                 text = "= ${entry.result}",
-                color = AppColors.TextPrimary,
+                color = colors.TextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium
             )
@@ -646,7 +746,7 @@ fun HistoryRow(
             ) {
                 Text(
                     text = timeFormat.format(Date(entry.timestamp)),
-                    color = AppColors.TextTertiary,
+                    color = colors.TextTertiary,
                     fontSize = 11.sp
                 )
                 Row {
@@ -657,7 +757,7 @@ fun HistoryRow(
                         Icon(
                             Icons.Default.ContentCopy,
                             contentDescription = "Copiar resultado",
-                            tint = AppColors.AccentBlue,
+                            tint = colors.AccentBlue,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -668,7 +768,7 @@ fun HistoryRow(
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = "Eliminar entrada",
-                            tint = AppColors.AccentRed,
+                            tint = colors.AccentRed,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -694,6 +794,7 @@ fun formatNumber(value: Double): String {
 @Composable
 fun ScientificButton(
     text: String,
+    colors: AppColors,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -702,8 +803,8 @@ fun ScientificButton(
         modifier = modifier.padding(2.dp).height(44.dp),
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = AppColors.SurfaceAlt,
-            contentColor = AppColors.AccentBlue
+            containerColor = colors.SurfaceAlt,
+            contentColor = colors.TextPrimary
         ),
         contentPadding = PaddingValues(0.dp)
     ) {
@@ -716,14 +817,18 @@ fun CalculatorButton(
     text: String,
     isOperator: Boolean,
     isEquals: Boolean,
+    colors: AppColors,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     val bgColor = when {
-        isEquals -> AppColors.AccentBlue
-        isOperator -> AppColors.AccentOrange
-        else -> AppColors.Surface
+        isEquals -> colors.AccentBlue
+        isOperator -> colors.AccentOrange
+        else -> colors.Surface
     }
+
+    val textColor = if (isOperator || isEquals) Color.White else colors.TextPrimary
+
     Button(
         onClick = onClick,
         modifier = modifier
@@ -733,7 +838,7 @@ fun CalculatorButton(
         shape = CircleShape,
         colors = ButtonDefaults.buttonColors(
             containerColor = bgColor,
-            contentColor = Color.White
+            contentColor = textColor
         ),
         contentPadding = PaddingValues(0.dp)
     ) {
