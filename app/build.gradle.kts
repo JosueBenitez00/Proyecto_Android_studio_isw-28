@@ -5,12 +5,15 @@ plugins {
 
 android {
     namespace = "com.example.proyecto_android_studio_isw_28"
-    compileSdk = 35
+    compileSdk {
+        version = release(37)
+    }
 
     defaultConfig {
         applicationId = "com.example.proyecto_android_studio_isw_28"
         minSdk = 24
-        targetSdk = 35
+        //noinspection EditedTargetSdkVersion
+        targetSdk = 37
         versionCode = 1
         versionName = "1.0"
 
@@ -19,11 +22,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            optimization {
+                enable = false
+            }
         }
     }
     compileOptions {
@@ -35,15 +36,7 @@ android {
     }
 }
 
-// ✅ NUEVA FORMA DE CONFIGURAR KOTLIN (Reemplaza a kotlinOptions)
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
-    }
-}
-
 dependencies {
-    // ... tus dependencias
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -52,10 +45,15 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+
+    // ✅ Iconos de Material (para Historial, Copiar, Basura)
     implementation(libs.androidx.compose.material.icons.extended)
+
+    // ✅ Librerías para la Calculadora Científica y el Historial
     implementation(libs.exp4j)
     implementation(libs.androidx.datastore.preferences)
 
+    // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Menu // ✅ Icono de hamburguesa
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +37,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+// 🔀 Paleta centralizada
 object AppColors {
     val Background = Color(0xFF1C1C1E)
     val Surface = Color(0xFF2C2C2E)
@@ -76,6 +78,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
     val scope = rememberCoroutineScope()
 
     var mode by remember { mutableStateOf(CalcMode.SCIENTIFIC) }
+    var showModeMenu by remember { mutableStateOf(false) }
 
     // Científica
     var expression by remember { mutableStateOf("") }
@@ -184,41 +187,63 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
         }
     }
 
-    // ✅ Modificador añadido para que sea scrollable en pantallas medianas
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(AppColors.Background)
-            .verticalScroll(rememberScrollState())
-            .padding(8.dp),
+            .padding(8.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Selector de modo
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            ModeChip(
-                text = "Científica",
-                selected = mode == CalcMode.SCIENTIFIC,
-                modifier = Modifier.weight(1f),
-                onClick = { mode = CalcMode.SCIENTIFIC }
-            )
-            ModeChip(
-                text = "Divisas",
-                selected = mode == CalcMode.CURRENCY,
-                modifier = Modifier.weight(1f),
-                onClick = { mode = CalcMode.CURRENCY }
-            )
+        // ---------- SUBMENÚ HAMBURGUESA ----------
+        Box(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+            OutlinedButton(
+                onClick = { showModeMenu = true },
+                modifier = Modifier.fillMaxWidth().height(44.dp),
+                shape = RoundedCornerShape(12.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Menu, // ✅ Icono de hamburguesa
+                    contentDescription = "Menú",
+                    tint = AppColors.TextPrimary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (mode == CalcMode.SCIENTIFIC) "Científica" else "Divisas",
+                    color = AppColors.TextPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            DropdownMenu(
+                expanded = showModeMenu,
+                onDismissRequest = { showModeMenu = false },
+                modifier = Modifier.background(AppColors.Surface).fillMaxWidth(0.9f)
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Científica", color = AppColors.TextPrimary) },
+                    onClick = {
+                        mode = CalcMode.SCIENTIFIC
+                        showModeMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Divisas", color = AppColors.TextPrimary) },
+                    onClick = {
+                        mode = CalcMode.CURRENCY
+                        showModeMenu = false
+                    }
+                )
+            }
         }
 
-        // Pantalla
+        // ---------- PANTALLA (DISPLAY) ----------
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 120.dp) // En vez de weight, altura mínima para evitar aplastamiento
+                .heightIn(min = 140.dp, max = 160.dp)
                 .padding(8.dp),
             contentAlignment = Alignment.BottomEnd
         ) {
@@ -256,7 +281,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                     Text(
                         text = expression.ifEmpty { "0" },
                         color = AppColors.TextSecondary,
-                        fontSize = 18.sp, // Ligeramente más pequeño
+                        fontSize = 18.sp,
                         textAlign = TextAlign.End,
                         maxLines = 2,
                         modifier = Modifier.fillMaxWidth()
@@ -266,14 +291,14 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                         Text(
                             text = errorText,
                             color = AppColors.AccentRed,
-                            fontSize = 24.sp, // Ligeramente más pequeño
+                            fontSize = 24.sp,
                             textAlign = TextAlign.End
                         )
                     } else {
                         Text(
                             text = displayText,
                             color = AppColors.TextPrimary,
-                            fontSize = 42.sp, // ✅ Reducido de 48 a 42 para Medium Phone
+                            fontSize = 42.sp,
                             fontWeight = FontWeight.Light,
                             textAlign = TextAlign.End,
                             maxLines = 1
@@ -298,7 +323,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
                         Text(
                             text = if (currencyResult.isNotEmpty()) currencyResult else "0.00",
                             color = AppColors.TextPrimary,
-                            fontSize = 42.sp, // ✅ Reducido
+                            fontSize = 42.sp,
                             fontWeight = FontWeight.Light,
                             textAlign = TextAlign.End,
                             maxLines = 1
@@ -316,7 +341,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Controles específicos del modo
+        // ---------- CONTROLES DEL MODO ----------
         if (mode == CalcMode.SCIENTIFIC) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -324,7 +349,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
             ) {
                 OutlinedButton(
                     onClick = { isDegreeMode = !isDegreeMode },
-                    modifier = Modifier.weight(1f).height(40.dp), // Botones más compactos
+                    modifier = Modifier.weight(1f).height(40.dp),
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = PaddingValues(0.dp)
                 ) { Text(if (isDegreeMode) "DEG" else "RAD", color = AppColors.TextPrimary, fontSize = 14.sp) }
@@ -439,7 +464,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
             }
         }
 
-        // Teclado
+        // ---------- TECLADO ----------
         val buttons = if (mode == CalcMode.SCIENTIFIC) {
             listOf(
                 listOf("C", "(", ")", "÷"),
@@ -494,33 +519,32 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
             }
         }
 
-        // Botón principal
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = {
-                if (mode == CalcMode.SCIENTIFIC) evaluateScientific()
-                else evaluateCurrency()
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp), // Ligeramente más bajo que 64.dp
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (mode == CalcMode.SCIENTIFIC) AppColors.AccentBlue
-                else AppColors.AccentOrange
-            )
-        ) {
-            Text(
-                text = if (mode == CalcMode.SCIENTIFIC) "Calcular" else "Convertir",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
+        // ---------- BOTÓN PRINCIPAL (Solo para Divisas) ----------
+        if (mode == CalcMode.CURRENCY) { // ✅ El botón solo se muestra en modo Divisas
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = { evaluateCurrency() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AppColors.AccentOrange
+                )
+            ) {
+                Text(
+                    text = "Convertir",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
         }
-        Spacer(modifier = Modifier.height(8.dp))
+
+        Spacer(modifier = Modifier.height(16.dp))
     }
 
-    // Bottom Sheet Historial
+    // ---------- BOTTOM SHEET HISTORIAL ----------
     if (showHistorySheet) {
         ModalBottomSheet(
             onDismissRequest = { showHistorySheet = false },
@@ -557,27 +581,7 @@ fun CalculatorApp(historyRepository: HistoryRepository) {
     }
 }
 
-@Composable
-fun ModeChip(
-    text: String,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val bg = if (selected) AppColors.AccentBlue else AppColors.Surface
-    Button(
-        onClick = onClick,
-        modifier = modifier.height(40.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = bg,
-            contentColor = AppColors.TextPrimary
-        ),
-        contentPadding = PaddingValues(0.dp)
-    ) {
-        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-    }
-}
+// ---------- COMPONENTES ----------
 
 @Composable
 fun HistorySheetContent(
@@ -739,7 +743,7 @@ fun ScientificButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.padding(2.dp).height(44.dp), // ✅ Reducido de 48 a 44
+        modifier = modifier.padding(2.dp).height(44.dp),
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = AppColors.SurfaceAlt,
@@ -777,6 +781,6 @@ fun CalculatorButton(
         ),
         contentPadding = PaddingValues(0.dp)
     ) {
-        Text(text = text, fontSize = 22.sp, fontWeight = FontWeight.Medium) // ✅ Reducido de 24 a 22
+        Text(text = text, fontSize = 22.sp, fontWeight = FontWeight.Medium)
     }
 }
